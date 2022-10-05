@@ -94,7 +94,10 @@ shinyApp(
     add_busy_spinner(spin="fading-circle", position='full-page',
                      height='100px', width='100px'),
     titlePanel("R code generator for a dataset import from Eurostat"),
-    p("Shiny app for rapid generation of an autocommented code based on the `eurodata` package"),
+    p("Shiny app for rapid generation of an autocommented code based on the `eurodata` package",
+      HTML(paste0('&#9632; ',
+                  '<a href="https://github.com/alekrutkowski/eurodata_codegen" target="_blank">',
+                 'Source code of the app</a>'))),
     fluidRow(
       column(6,
              selectInput("selected_ds",
@@ -123,7 +126,7 @@ shinyApp(
                     ifelse(Dim_name=='TIME_PERIOD' & grepl('^....Q..$',Dim_val),
                            sub('Q',"-Q",Dim_val,fixed=TRUE),
                            .)]
-              )}
+        )}
     )
     dims <- reactive({
       md <- metadata()
