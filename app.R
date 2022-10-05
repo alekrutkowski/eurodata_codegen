@@ -79,12 +79,14 @@ dcastCode <- function(metadata_dt) {
 }
 
 datasets <-
-  if (exists('datasets')) datasets else
-    importDataList() %>%
+  importDataList() %>%
   as.data.table() %>%
   .[,.(Code,`Dataset name`)] %>%
   unique() %>%
   with(codeWithLabelInNames(Code,`Dataset name`))
+
+link <- function(txt, url)
+  paste0('<a href="',url,'" target="_blank">',txt,'</a>')
 
 # Application
 shinyApp(
@@ -93,11 +95,17 @@ shinyApp(
     rclipboardSetup(),
     add_busy_spinner(spin="fading-circle", position='full-page',
                      height='100px', width='100px'),
-    titlePanel("R code generator for a dataset import from Eurostat"),
-    p("Shiny app for rapid generation of an autocommented code based on the `eurodata` package",
-      HTML(paste0('&#9632; ',
-                  '<a href="https://github.com/alekrutkowski/eurodata_codegen" target="_blank">',
-                 'Source code of the app</a>'))),
+    titlePanel(HTML(paste0(link('R','https://www.r-project.org'),
+                           ' code generator for a dataset import from ',
+                           link('Eurostat',
+                                'https://ec.europa.eu/eurostat/databrowser/explore/all/all_themes'))),
+               windowTitle='eurodata_codegen'),
+    p(HTML(paste0(link('Shiny','https://shiny.rstudio.com'),
+                  ' app for rapid generation of an autocommented code based on the ',
+                  link('eurodata','https://CRAN.R-project.org/package=eurodata'),
+                  ' package',
+                  ' &#9632; ',
+                  link('Source code of the app','https://github.com/alekrutkowski/eurodata_codegen')))),
     fluidRow(
       column(6,
              selectInput("selected_ds",
