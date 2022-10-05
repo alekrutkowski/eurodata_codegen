@@ -2,6 +2,7 @@ library(magrittr)
 library(eurodata)
 library(data.table)
 library(shiny)
+library(shinybusy)
 library(rclipboard)
 
 # Helpers
@@ -90,6 +91,8 @@ shinyApp(
   ui = fluidPage(
     tags$head(tags$style(HTML('* {font-weight: bold; font-family: monospace};'))),
     rclipboardSetup(),
+    add_busy_spinner(spin="fading-circle", position='full-page',
+                     height='100px', width='100px'),
     titlePanel("R code generator for a dataset import from Eurostat"),
     p("Shiny app for rapid generation of an autocommented code based on the `eurodata` package"),
     fluidRow(
