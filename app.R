@@ -88,6 +88,15 @@ datasets <-
 link <- function(txt, url)
   paste0('<a href="',url,'" target="_blank">',txt,'</a>')
 
+urlStructure <- memoise::memoise(function(ds_code)
+  ds_code %>% 
+    toupper(.) %>% 
+    paste0('https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/datastructure/estat/',.) %>% 
+    xml2::read_xml() %>% 
+    xml2::as_list() %>% 
+    {.$Structure$Structures$DataStructures$DataStructure$DataStructureComponents$DimensionList} %>% 
+    sapply(function(x) attr(x$ConceptIdentity$Ref,'id')))
+
 # Application
 shinyApp(
   ui = fluidPage(
@@ -119,8 +128,9 @@ shinyApp(
              uiOutput('dim_selection_ui')
       ),
       column(6,
-             verbatimTextOutput("value"),
-             uiOutput("clip")
+             uiOutput("clip"),
+             br(),
+             verbatimTextOutput("value")
       ))),
   server = function(input, output) {
     metadata <- reactive(
@@ -168,6 +178,58 @@ shinyApp(
                         width='100%')
           })
       })
+    AltRcode <- reactive({
+      md <- metadata()
+      input$selected_ds %>% 
+        {`if`(.!='<none>' & !is.null(md),
+              urlStructure(.) %>%
+                .[.!='TIME_PERIOD'] %>%
+                sapply(function(x)
+                  ifelse(x=='freq',"", paste(input[[paste0('selected_',x)]],collapse='+'))) %>% 
+                paste(collapse='.') %>% 
+                paste0('https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/',
+                       toupper(input$selected_ds),
+                       '/',.,
+                       '?format=TSV',
+                       ifelse(!is.null(input$selected_TIME_PERIOD),
+                              paste0('&startPeriod=',min(input$selected_TIME_PERIOD),
+                                     '&endPeriod=',max(input$selected_TIME_PERIOD)),
+                              "")) %>% 
+                paste0('\n\n\n',
+                       '# ________________________________________________________________________________________\n',
+                       '# Alternative "low-level" approach with smaller download if few dimension values selected:\n',
+                       'library(magrittr)\nlibrary(data.table)\n',
+                       'dt__',input$selected_ds,' <-\n',
+                       '"',.,'" %>%\n',
+                       # TO BE FURTHER DEVBELOPED FOR SELECTED Dim_vals ONLY
+                       # {`if`(is.data.table(md),
+                       #   md %>%
+                       #     .[,.(Dim_name,Dim_val,Dim_val_label)] %>% 
+                       #     unique() %>% 
+                       #     {paste0("# ",.$Dim_name,'=',.$Dim_val,' means ',.$Dim_val_label,'\n') %>% 
+                       #         paste(collapse="")},
+                       #   "")},
+                       'fread(\nheader=TRUE, sep="\\t") %>%\n',
+                       '.[, lapply(.,as.character)] %>% # because some cols numeric, others numeric and flags\n',
+                       'melt(id.vars=colnames(.)[1],\n',
+                       '     variable.name=sub("^.+\\\\\\\\(.+)$","\\\\1",colnames(.)[1])) %>%\n',
+                       'setnames(colnames(.)[1], sub("^(.+)\\\\\\\\.+$","\\\\1",colnames(.)[1])) %>%\n',
+                       '.[, `:=`(strsplit(colnames(.)[1],",")[[1]],\n',
+                       '         tstrsplit(get(colnames(.)[1]),split=","))] %>%\n',
+                       '.[, colnames(.)[1] := NULL] %>%\n',
+                       '.[, c("value_","flags_") := tstrsplit(value,split=" ")] %>%\n',
+                       '.[, value := NULL] %>%\n',
+                       '.[, freq := NULL] %>% # probably not needed\n',
+                       '.[, value_ := as.numeric(value_)] %>%\n',
+                       '.[, flags_ := NULL] %>% # flags not needed\n',
+                       md[(only_one),Dim_name] %>% unique() %>% 
+                         {`if`(length(.)>0,
+                               paste0('.[, c(',paste0('"',.,'"',collapse=","),
+                                      ') := NULL] %>% # not needed since only single options in each\n'),
+                               "")},
+                       dcastCode(md))
+        )}
+    })
     Rcode <-
       reactive({
         di <- dims()
@@ -198,7 +260,8 @@ shinyApp(
                          paste0('.[, c(',paste0('"',.,'"',collapse=","),
                                 ') := NULL] %>% # not needed since only single options in each\n'),
                          "")},
-                 dcastCode(md))
+                 dcastCode(md),
+                 AltRcode())
       })
     output$value <-
       reactive(Rcode())
