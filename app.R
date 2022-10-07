@@ -95,6 +95,10 @@ shinyApp(
     rclipboardSetup(),
     add_busy_spinner(spin="fading-circle", position='full-page',
                      height='100px', width='100px'),
+    HTML('<input type="text" id="client_time" name="client_time" style="display: none;"> '),
+    tags$script('$(function() {
+    var time_now = new Date()
+    $("input#client_time").val(Intl.DateTimeFormat("en-GB", { dateStyle: "full", timeStyle: "long" }).format(time_now))});'),
     titlePanel(HTML(paste0(link('R','https://www.r-project.org'),
                            ' code generator for a dataset import from ',
                            link('Eurostat',
@@ -179,7 +183,7 @@ shinyApp(
           rbindlist() %>% 
           merge(md %>% print, by=c('Dim_name','Dim_val')) %>% 
           describe_dt_to_Rcode() %>% 
-          paste0('# Code generated on ',Sys.time(),', ',Sys.timezone(),'\n\n',
+          paste0('# Code generated on ',input$client_time,'\n\n',
                  'library(magrittr)\nlibrary(data.table)\nlibrary(eurodata)\n\n',
                  'dt__',input$selected_ds,' <-\n',
                  'importData("',input$selected_ds,'") %>% # ',
