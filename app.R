@@ -189,8 +189,8 @@ shinyApp(
                 paste(collapse='.') %>% 
                 paste0('https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/',
                        toupper(input$selected_ds),
-                       '/',.,
-                       '?format=TSV',
+                       '/",\n       "',.,
+                       '",\n       "?format=TSV',
                        ifelse(!is.null(input$selected_TIME_PERIOD),
                               paste0('&startPeriod=',min(input$selected_TIME_PERIOD),
                                      '&endPeriod=',max(input$selected_TIME_PERIOD)),
@@ -200,7 +200,7 @@ shinyApp(
                        '# Alternative "low-level" approach with smaller download if few dimension values selected:\n',
                        'library(magrittr)\nlibrary(data.table)\n',
                        'dt__',input$selected_ds,' <-\n',
-                       '"',.,'" %>%\n',
+                       'paste0("',.,'") %>%\n',
                        # TO BE FURTHER DEVBELOPED FOR SELECTED Dim_vals ONLY
                        # {`if`(is.data.table(md),
                        #   md %>%
@@ -209,7 +209,7 @@ shinyApp(
                        #     {paste0("# ",.$Dim_name,'=',.$Dim_val,' means ',.$Dim_val_label,'\n') %>% 
                        #         paste(collapse="")},
                        #   "")},
-                       'fread(\nheader=TRUE, sep="\\t") %>%\n',
+                       'fread(header=TRUE, sep="\\t") %>%\n',
                        '.[, lapply(.,as.character)] %>% # because some cols numeric, others numeric and flags\n',
                        'melt(id.vars=colnames(.)[1],\n',
                        '     variable.name=sub("^.+\\\\\\\\(.+)$","\\\\1",colnames(.)[1])) %>%\n',
