@@ -4,6 +4,7 @@ library(data.table)
 library(shiny)
 library(shinybusy)
 library(rclipboard)
+library(xml2)
 
 # Helpers
 
@@ -78,6 +79,16 @@ dcastCode <- function(metadata_dt) {
              ',\n      fill=NA_real_, sep=" ")')
 }
 
+unneededColsCode <- function(metadata_dt) {
+  metadata_dt %>%
+    .[(only_one),Dim_name] %>%
+    unique() %>% 
+    {`if`(length(.)>0,
+          paste0('.[, c(',paste0('"',.,'"',collapse=","),
+                 ') := NULL] %>% # not needed since only single options in each\n'),
+          "")}
+}
+
 datasets <-
   importDataList() %>%
   as.data.table() %>%
@@ -94,7 +105,12 @@ urlStructure <- memoise::memoise(function(ds_code)
     paste0('https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/datastructure/estat/',.) %>% 
     xml2::read_xml() %>% 
     xml2::as_list() %>% 
-    {.$Structure$Structures$DataStructures$DataStructure$DataStructureComponents$DimensionList} %>% 
+    {.$Structure$
+        Structures$
+        DataStructures$
+        DataStructure$
+        DataStructureComponents$
+        DimensionList} %>% 
     sapply(function(x) attr(x$ConceptIdentity$Ref,'id')))
 
 # Application
@@ -201,32 +217,39 @@ shinyApp(
                        'library(magrittr)\nlibrary(data.table)\n',
                        'dt__',input$selected_ds,' <-\n',
                        'paste0("',.,'") %>%\n',
-                       # TO BE FURTHER DEVBELOPED FOR SELECTED Dim_vals ONLY
-                       # {`if`(is.data.table(md),
-                       #   md %>%
-                       #     .[,.(Dim_name,Dim_val,Dim_val_label)] %>% 
-                       #     unique() %>% 
-                       #     {paste0("# ",.$Dim_name,'=',.$Dim_val,' means ',.$Dim_val_label,'\n') %>% 
-                       #         paste(collapse="")},
-                       #   "")},
+                       {`if`(is.data.table(md),
+                             md %>%
+                               .[,.(Dim_name,Dim_name_label,Dim_val,Dim_val_label)] %>%
+                               unique() %>%
+                               {dt <- (.)
+                               lapply(unique(dt$Dim_name),
+                                      function(x) {
+                                        selected_vals <- input[[paste0('selected_',x)]]
+                                        if (!is.null(selected_vals) && x!='TIME_PERIOD')
+                                          dt[Dim_name==x & Dim_val %in% selected_vals]
+                                      })} %>%
+                               rbindlist() %>% 
+                               {if (nrow(.)==0) "" else 
+                                 paste0("# ",.$Dim_name,'=',.$Dim_val,
+                                        ' -- ',
+                                        .$Dim_name_label,' = ',.$Dim_val_label,'\n') %>%
+                                   paste(collapse="") %>% 
+                                   paste0('# Meaning of the codes in the URL above:\n',.)},
+                             "")},
                        'fread(header=TRUE, sep="\\t") %>%\n',
                        '.[, lapply(.,as.character)] %>% # because some cols numeric, others numeric and flags\n',
                        'melt(id.vars=colnames(.)[1],\n',
                        '     variable.name=sub("^.+\\\\\\\\(.+)$","\\\\1",colnames(.)[1])) %>%\n',
                        'setnames(colnames(.)[1], sub("^(.+)\\\\\\\\.+$","\\\\1",colnames(.)[1])) %>%\n',
-                       '.[, `:=`(strsplit(colnames(.)[1],",")[[1]],\n',
-                       '         tstrsplit(get(colnames(.)[1]),split=","))] %>%\n',
+                       '.[, strsplit(colnames(.)[1],",")[[1]] :=\n',
+                       '    tstrsplit(get(colnames(.)[1]),split=",")] %>%\n',
                        '.[, colnames(.)[1] := NULL] %>%\n',
                        '.[, c("value_","flags_") := tstrsplit(value,split=" ")] %>%\n',
                        '.[, value := NULL] %>%\n',
                        '.[, freq := NULL] %>% # probably not needed\n',
                        '.[, value_ := as.numeric(value_)] %>%\n',
                        '.[, flags_ := NULL] %>% # flags not needed\n',
-                       md[(only_one),Dim_name] %>% unique() %>% 
-                         {`if`(length(.)>0,
-                               paste0('.[, c(',paste0('"',.,'"',collapse=","),
-                                      ') := NULL] %>% # not needed since only single options in each\n'),
-                               "")},
+                       unneededColsCode(md),
                        dcastCode(md))
         )}
     })
@@ -255,11 +278,7 @@ shinyApp(
                  '.[!is.na(value_)] %>%\n',
                  '.[, flags_ := NULL] %>% # flags not needed\n',
                  '.[\n',.,'] %>%\n',
-                 md[(only_one),Dim_name] %>% unique() %>% 
-                   {`if`(length(.)>0,
-                         paste0('.[, c(',paste0('"',.,'"',collapse=","),
-                                ') := NULL] %>% # not needed since only single options in each\n'),
-                         "")},
+                 unneededColsCode(md),
                  dcastCode(md),
                  AltRcode())
       })
