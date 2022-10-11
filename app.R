@@ -234,8 +234,9 @@ shinyApp(
                                         ' -- ',
                                         .$Dim_name_label,' = ',.$Dim_val_label,'\n') %>%
                                    paste(collapse="") %>% 
-                                   paste0('# Meaning of the codes in the URL above:\n',.)},
+                                   paste0('## Meaning of the codes in the URL above:\n',.)},
                              "")},
+                       '## Dataset: ',names(datasets)[datasets==input$selected_ds],'\n',
                        'fread(header=TRUE, sep="\\t") %>%\n',
                        '.[, lapply(.,as.character)] %>% # because some cols numeric, others numeric and flags\n',
                        'melt(id.vars=colnames(.)[1],\n',
