@@ -100,10 +100,14 @@ datasets <-
 link <- function(txt, url)
   paste0('<a href="',url,'" target="_blank">',txt,'</a>')
 
+xmlMetadataAddress <- function(ds_code)
+  ds_code %>% 
+  toupper(.) %>% 
+  paste0('https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/datastructure/estat/',.)
+
 urlStructure <- memoise::memoise(function(ds_code)
   ds_code %>% 
-    toupper(.) %>% 
-    paste0('https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/datastructure/estat/',.) %>% 
+    xmlMetadataAddress() %>% 
     xml2::read_xml() %>% 
     xml2::as_list() %>% 
     {.$Structure$
@@ -210,8 +214,10 @@ shinyApp(
                 paste(collapse='.') %>% 
                 paste0('https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/',
                        toupper(input$selected_ds),
-                       '/",\n       "',.,
-                       '",\n       "?format=TSV',
+                       '/",\n       "',.,'", ## the order of the dot-separated dimensions determined in ',
+                       xmlMetadataAddress(input$selected_ds),' : ',
+                       'Structure > Structures > DataStructures > DataStructure > DataStructureComponents > DimensionList > { foreach element of that list: ConceptIdentity > Ref > attribute(id) }',
+                       '\n       "?format=TSV',
                        ifelse(!is.null(input$selected_TIME_PERIOD),
                               paste0('&startPeriod=',min(input$selected_TIME_PERIOD),
                                      '&endPeriod=',max(input$selected_TIME_PERIOD)),
