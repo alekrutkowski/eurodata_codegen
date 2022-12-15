@@ -204,65 +204,59 @@ shinyApp(
           })
       })
     AltRcode <- reactive({
+      di <- dims()
       md <- metadata()
       input$selected_ds %>% 
-        {`if`(.!='<none>' & !is.null(md),
-              urlStructure(.) %>%
-                .[.!='TIME_PERIOD'] %>%
-                sapply(function(x)
-                  ifelse(x=='freq',"", paste(input[[paste0('selected_',x)]],collapse='+'))) %>% 
-                paste(collapse='.') %>% 
-                paste0('https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/',
-                       toupper(input$selected_ds),
-                       '/",\n       "',.,'", ## the order of the dot-separated dimensions determined in ',
-                       xmlMetadataAddress(input$selected_ds),' : ',
-                       'Structure > Structures > DataStructures > DataStructure > DataStructureComponents > DimensionList > { foreach element of that list: ConceptIdentity > Ref > attribute(id) }',
-                       '\n       "?format=TSV',
-                       ifelse(!is.null(input$selected_TIME_PERIOD),
-                              paste0('&startPeriod=',min(input$selected_TIME_PERIOD),
-                                     '&endPeriod=',max(input$selected_TIME_PERIOD)),
-                              "")) %>% 
-                paste0('\n\n\n',
-                       '# ________________________________________________________________________________________\n',
-                       '# Alternative "low-level" approach with smaller download if few dimension values selected:\n',
-                       'library(magrittr)\nlibrary(data.table)\n',
-                       'dt__',input$selected_ds,' <-\n',
-                       'paste0("',.,'") %>%\n',
-                       {`if`(is.data.table(md),
-                             md %>%
-                               .[,.(Dim_name,Dim_name_label,Dim_val,Dim_val_label)] %>%
-                               unique() %>%
-                               {dt <- (.)
-                               lapply(unique(dt$Dim_name),
-                                      function(x) {
-                                        selected_vals <- input[[paste0('selected_',x)]]
-                                        if (!is.null(selected_vals) && x!='TIME_PERIOD')
-                                          dt[Dim_name==x & Dim_val %in% selected_vals]
-                                      })} %>%
-                               rbindlist() %>% 
-                               {if (nrow(.)==0) "" else 
-                                 paste0("# ",.$Dim_name,'=',.$Dim_val,
-                                        ' -- ',
-                                        .$Dim_name_label,' = ',.$Dim_val_label,'\n') %>%
-                                   paste(collapse="") %>% 
-                                   paste0('## Meaning of the codes in the URL above:\n',.)},
-                             "")},
-                       '## Dataset: ',names(datasets)[datasets==input$selected_ds],'\n',
-                       'fread(header=TRUE, sep="\\t") %>%\n',
-                       '.[, lapply(.,as.character)] %>% # because some cols numeric, others numeric and flags\n',
-                       'melt(id.vars=colnames(.)[1],\n',
-                       '     variable.name=sub("^.+\\\\\\\\(.+)$","\\\\1",colnames(.)[1])) %>%\n',
-                       'setnames(colnames(.)[1], sub("^(.+)\\\\\\\\.+$","\\\\1",colnames(.)[1])) %>%\n',
-                       '.[, strsplit(colnames(.)[1],",")[[1]] :=\n',
-                       '    tstrsplit(get(colnames(.)[1]),split=",")] %>%\n',
-                       '.[, colnames(.)[1] := NULL] %>%\n',
-                       '.[, c("value_","flags_") := tstrsplit(value,split=" ")] %>%\n',
-                       '.[, value := NULL] %>%\n',
-                       '.[, freq := NULL] %>% # probably not needed\n',
-                       '.[, value_ := as.numeric(value_)] %>%\n',
-                       '.[, flags_ := NULL] %>% # flags not needed\n',
-                       unneededColsCode(md),
-                       dcastCode(md))
+        {`if`(.!='<none>' & !is.null(md) & !is.null(di),
+              paste0('\n\n',
+                     '# ___________________________________________________________________________\n',
+                     '# Alternative approach with smaller download if few dimension values selected\n',
+                     '# or you don\'t need rules-based filtering of datatset observations:\n',
+                     'library(magrittr)\nlibrary(data.table)\nlibrary(eurodata)\n',
+                     'dt__',input$selected_ds,' <-\n',
+                     {`if`(is.data.table(md),
+                           md %>% 
+                             .[,.(Dim_name,Dim_name_label,Dim_val,Dim_val_label)] %>%
+                             unique() %>%
+                             {dt <- (.)
+                             lapply(unique(dt$Dim_name),
+                                    function(x) {
+                                      selected_vals <- input[[paste0('selected_',x)]]
+                                      if (!is.null(selected_vals) && x!='TIME_PERIOD')
+                                        dt[Dim_name==x & Dim_val %in% selected_vals]
+                                    })} %>%
+                             rbindlist() %>% 
+                             {if (nrow(.)==0) "" else 
+                               merge(.,unique(md[,.(Dim_name,only_one)])) %>% 
+                                 {paste0("# ",.$Dim_name,'=',.$Dim_val,
+                                         ' -- ',
+                                         .$Dim_name_label,' = ',.$Dim_val_label,
+                                         ifelse(.$only_one,
+                                                ' # THE ONLY OPTION AVAILABLE', ""),
+                                         '\n') %>%
+                                     paste(collapse="") %>% 
+                                     paste0('## Meaning of the codes in `filters` below:\n',.)}},
+                           "")},
+                     di %>%
+                       rbindlist() %>% 
+                       .$Dim_name %>%
+                       sapply(function(x)
+                         input[[paste0('selected_',x)]] %>% 
+                           paste0('"',.,'"',collapse=",") %>% 
+                           paste0(x,' = c(',.,')')) %>% 
+                       paste(collapse=',\n                          ') %>% 
+                       paste0('           filters = list(',.,')') %>% 
+                       paste0('importData("',input$selected_ds,'", # ',
+                              names(datasets)[datasets==input$selected_ds] %>%
+                                sub('\\[.+\\] (.+)','\\1',.),'\n',
+                              .,') %>%\n'),
+                     'as.data.table() %>%\n',
+                     '.[!is.na(value_)] %>%\n',
+                     '.[, freq := NULL] %>% # probably not needed\n',
+                     '.[, value_ := as.numeric(value_)] %>%\n',
+                     '.[, flags_ := NULL] %>% # flags not needed\n',
+                     unneededColsCode(md),
+                     dcastCode(md))
         )}
     })
     Rcode <-
@@ -278,10 +272,10 @@ shinyApp(
                               Dim_val=input[[paste0('selected_',.)]] %>%
                                 `if`(is.null(.),"",.))) %>%
           rbindlist() %>% 
-          merge(md %>% print, by=c('Dim_name','Dim_val')) %>% 
+          merge(md, by=c('Dim_name','Dim_val')) %>% 
           describe_dt_to_Rcode() %>% 
           paste0('# Code generated on ',input$client_time,'\n\n',
-                 'library(magrittr)\nlibrary(data.table)\nlibrary(eurodata)\n\n',
+                 'library(magrittr)\nlibrary(data.table)\nlibrary(eurodata)\n',
                  'dt__',input$selected_ds,' <-\n',
                  'importData("',input$selected_ds,'") %>% # ',
                  names(datasets)[datasets==input$selected_ds] %>%
