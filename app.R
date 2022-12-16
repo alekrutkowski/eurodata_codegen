@@ -103,7 +103,7 @@ link <- function(txt, url)
 xmlMetadataAddress <- function(ds_code)
   ds_code %>% 
   toupper(.) %>% 
-  paste0('https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/datastructure/estat/',.)
+  paste0(eurodata:::EurostatBaseUrl,'datastructure/estat/',.)
 
 urlStructure <- memoise::memoise(function(ds_code)
   ds_code %>% 
@@ -118,6 +118,62 @@ urlStructure <- memoise::memoise(function(ds_code)
         DimensionList} %>% 
     sapply(function(x) attr(x$ConceptIdentity$Ref,'id')))
 
+urlOfFilteredDataset <- function(input)
+  input$selected_ds %>% 
+  urlStructure(.) %>%
+  .[.!='TIME_PERIOD'] %>%
+  sapply(function(x)
+    ifelse(x=='freq',"", paste(input[[paste0('selected_',x)]],collapse='+'))) %>% 
+  paste(collapse='.') %>% 
+  paste0(eurodata:::EurostatBaseUrl,"data/",
+         toupper(input$selected_ds),'/',.,'?format=TSV',
+         ifelse(!is.null(input$selected_TIME_PERIOD),
+                paste0('&startPeriod=',min(input$selected_TIME_PERIOD),
+                       '&endPeriod=',max(input$selected_TIME_PERIOD)),
+                ""))
+
+urlOfFullDataset <- function(ds_name)
+  paste0(eurodata:::EurostatBaseUrl,"data/",toupper(ds_name),
+         "?format=TSV&compressed=true")
+
+preamble <- function(input)
+  paste0('# Code generated with eurodata_codegen on ',
+         time_stamp(input$client_time_zone, input$client_time_name),'\n',
+         'library(magrittr)\nlibrary(data.table)\nlibrary(eurodata)\n',
+         'dt__',input$selected_ds,' <-\n')
+
+middleware <-
+  paste0('as.data.table() %>%\n',
+         '.[!is.na(value_)] %>%\n',
+         '.[, freq := NULL] %>% # probably not needed\n',
+         '.[, value_ := as.numeric(value_)] %>%\n',
+         '.[, flags_ := NULL] %>% # flags not needed\n')
+
+conclusion <- function(rcode)
+  rcode %>% 
+  list(txt=.,
+       html=prismjs::prism_highlight_text(.,language='r') %>% 
+         gsub('(https):\\/\\/(\\S*)',
+              '\\1://\\2' %>% link(.,.),
+              .) %>% 
+         paste0('<pre class="shiny-text-output" style="background-color:white;">',
+                .,'</pre>'))
+
+time_stamp <- function(timezone_offset, timezone_name) {
+  now <- Sys.time()
+  tzo <- -as.numeric(timezone_offset) # in minutes
+  sig <- ifelse(tzo==0,"",
+                ifelse(tzo>0,'+','-'))
+  h <- abs(tzo/60)
+  hrs <- floor(h) %>% 
+    paste0(.,':',
+           formatC(60*(h - .),
+                   0,width=2,flag='0',format='f'))
+  attr(now, "tzone") <- "UTC"
+  paste0(now + 60*tzo,
+         ' (UTC',sig,hrs,', ',timezone_name,')')
+}
+
 prism_style <-
   "code[class*=language-],pre[class*=language-]{color:#000;background:0 0;text-shadow:0 1px #fff;font-family:Consolas,Monaco,'Andale Mono','Ubuntu Mono',monospace;font-size:1em;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}code[class*=language-] ::-moz-selection,code[class*=language-]::-moz-selection,pre[class*=language-] ::-moz-selection,pre[class*=language-]::-moz-selection{text-shadow:none;background:#b3d4fc}code[class*=language-] ::selection,code[class*=language-]::selection,pre[class*=language-] ::selection,pre[class*=language-]::selection{text-shadow:none;background:#b3d4fc}@media print{code[class*=language-],pre[class*=language-]{text-shadow:none}}pre[class*=language-]{padding:1em;margin:.5em 0;overflow:auto}:not(pre)>code[class*=language-],pre[class*=language-]{background:#f5f2f0}:not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal}.token.cdata,.token.comment,.token.doctype,.token.prolog{color:#708090}.token.punctuation{color:#999}.token.namespace{opacity:.7}.token.boolean,.token.constant,.token.deleted,.token.number,.token.property,.token.symbol,.token.tag{color:#905}.token.attr-name,.token.builtin,.token.char,.token.inserted,.token.selector,.token.string{color:#690}.language-css .token.string,.style .token.string,.token.entity,.token.operator,.token.url{color:#9a6e3a;background:hsla(0,0%,100%,.5)}.token.atrule,.token.attr-value,.token.keyword{color:#07a}.token.class-name,.token.function{color:#dd4a68}.token.important,.token.regex,.token.variable{color:#e90}.token.bold,.token.important{font-weight:700}.token.italic{font-style:italic}.token.entity{cursor:help}"
 
@@ -129,34 +185,60 @@ shinyApp(
     rclipboardSetup(),
     add_busy_spinner(spin="fading-circle", position='full-page',
                      height='100px', width='100px'),
-    HTML('<input type="text" id="client_time" name="client_time" style="display: none;"> '),
-    tags$script('$(function() {
-    var time_now = new Date()
-    $("input#client_time").val(Intl.DateTimeFormat("en-GB", { dateStyle: "full", timeStyle: "long" }).format(time_now))});'),
-    titlePanel(HTML(paste0(link('R','https://www.r-project.org'),
-                           ' code generator for a dataset import from ',
-                           link('Eurostat',
-                                'https://ec.europa.eu/eurostat/databrowser/explore/all/all_themes'))),
-               windowTitle='eurodata_codegen'),
-    p(HTML(paste0(link('Shiny','https://shiny.rstudio.com'),
-                  ' app for rapid generation of an autocommented code based on the ',
-                  link('eurodata','https://CRAN.R-project.org/package=eurodata'),
-                  ' package',
-                  ' &#9632; ',
-                  link('Source code of the app','https://github.com/alekrutkowski/eurodata_codegen')))),
+    HTML('<input type="text" id="client_time_zone" name="client_time_zone" style="display: none;">',
+         '<input type="text" id="client_time_name" name="client_time_name" style="display: none;">'
+    ),
+    tags$script('
+    $(function() {
+    var time_zone = new Date().getTimezoneOffset();
+    $("input#client_time_zone").val(time_zone);});'),
+    tags$script('
+    $(function() {
+    var time_zone_name = new Date().toLocaleDateString(undefined, {day:"2-digit",timeZoneName: "long" }).substring(4);
+    $("input#client_time_name").val(time_zone_name);
+    });
+    '),
     fluidRow(
       column(6,
+             titlePanel(HTML(paste0(link('R','https://www.r-project.org'),
+                                    ' code generator for a dataset import from ',
+                                    link('Eurostat',
+                                         'https://ec.europa.eu/eurostat/databrowser/explore/all/all_themes'))),
+                        windowTitle='eurodata_codegen'),
+             p(HTML(paste0(link('Shiny','https://shiny.rstudio.com'),
+                           ' app for rapid generation of an autocommented code based on the ',
+                           link('eurodata','https://CRAN.R-project.org/package=eurodata'),
+                           ' package',
+                           ' &#9632; ',
+                           link('Source code of the app','https://github.com/alekrutkowski/eurodata_codegen')))),
              selectInput("selected_ds",
                          label=h3("Select dataset"), 
                          choices=c('<none>', datasets),
                          width='100%'),
+             htmlOutput('link_to_gui'),
              uiOutput('dim_selection_ui')
       ),
       column(6,
-             uiOutput("clip"),
-             br(),
-             htmlOutput("value")
-      ))),
+             conditionalPanel(
+               condition = "input.selected_ds != '<none>'",
+               br(),
+               p('Approach 1: Download data subset. Use it if few dimension values selected',
+                 'and you don\'t need rules-based filtering of datatset observations',
+                 HTML('<div style="color:white;border-radius:5px;background:rgb(51,122,183);padding:2px;"><small><small>',
+                      '&nbsp;&#9888; Warning: importData() may return an empty data.frame (with 0 observations) if ',
+                      'no data is available for your selections!</small></small></div>')),
+               uiOutput("clip_Rcode_filtered"),
+               br(),
+               htmlOutput("Rcode_filtered"),
+               br(),
+               p('Approach 2: Download full dataset (compressed). Use it if many dimension values selected',
+                 'or you need rules-based filtering of datatset observations'),
+               uiOutput("clip_Rcode_full"),
+               br(),
+               htmlOutput("Rcode_full")
+             )
+      )
+    )),
   server = function(input, output) {
     metadata <- reactive(
       input$selected_ds %>% 
@@ -183,6 +265,15 @@ shinyApp(
         unique() %>% 
         split(seq_len(nrow(.)))
     })
+    output$link_to_gui <- 
+      reactive(
+        input$selected_ds %>% 
+          {`if`(.!='<none>',
+                paste0('https://ec.europa.eu/eurostat/databrowser/view/',.,
+                       '/default/table?lang=en') %>% 
+                  {paste0('<small style="display:block; margin-top:-10px; margin-bottom:20px;"><small>',
+                          'Link to Eurostat\'s GUI: ',link(.,.),'</small></small>')}
+          )})
     output$dim_selection_ui <-
       renderUI({
         di <- dims()
@@ -203,67 +294,61 @@ shinyApp(
                         width='100%')
           })
       })
-    AltRcode <- reactive({
+    Rcode_filtered <- reactive({
       di <- dims()
       md <- metadata()
       input$selected_ds %>% 
-        {`if`(.!='<none>' & !is.null(md) & !is.null(di),
-              paste0('\n\n',
-                     '# ___________________________________________________________________________\n',
-                     '# Alternative approach with smaller download if few dimension values selected\n',
-                     '# or you don\'t need rules-based filtering of datatset observations:\n',
-                     'library(magrittr)\nlibrary(data.table)\nlibrary(eurodata)\n',
-                     'dt__',input$selected_ds,' <-\n',
-                     {`if`(is.data.table(md),
-                           md %>% 
-                             .[,.(Dim_name,Dim_name_label,Dim_val,Dim_val_label)] %>%
-                             unique() %>%
-                             {dt <- (.)
-                             lapply(unique(dt$Dim_name),
-                                    function(x) {
-                                      selected_vals <- input[[paste0('selected_',x)]]
-                                      if (!is.null(selected_vals) && x!='TIME_PERIOD')
-                                        dt[Dim_name==x & Dim_val %in% selected_vals]
-                                    })} %>%
-                             rbindlist() %>% 
-                             {if (nrow(.)==0) "" else 
-                               merge(.,unique(md[,.(Dim_name,only_one)])) %>% 
-                                 {paste0("# ",.$Dim_name,'=',.$Dim_val,
-                                         ' -- ',
-                                         .$Dim_name_label,' = ',.$Dim_val_label,
-                                         ifelse(.$only_one,
-                                                ' # THE ONLY OPTION AVAILABLE', ""),
-                                         '\n') %>%
-                                     paste(collapse="") %>% 
-                                     paste0('## Meaning of the codes in `filters` below:\n',.)}},
-                           "")},
-                     di %>%
-                       rbindlist() %>% 
-                       .$Dim_name %>%
-                       sapply(function(x)
-                         input[[paste0('selected_',x)]] %>% 
-                           paste0('"',.,'"',collapse=",") %>% 
-                           paste0(x,' = c(',.,')')) %>% 
-                       paste(collapse=',\n                          ') %>% 
-                       paste0('           filters = list(',.,')') %>% 
-                       paste0('importData("',input$selected_ds,'", # ',
-                              names(datasets)[datasets==input$selected_ds] %>%
-                                sub('\\[.+\\] (.+)','\\1',.),'\n',
-                              .,') %>%\n'),
-                     'as.data.table() %>%\n',
-                     '.[!is.na(value_)] %>%\n',
-                     '.[, freq := NULL] %>% # probably not needed\n',
-                     '.[, value_ := as.numeric(value_)] %>%\n',
-                     '.[, flags_ := NULL] %>% # flags not needed\n',
-                     unneededColsCode(md),
-                     dcastCode(md))
+        {`if`(.!='<none>' && !is.null(md) && !is.null(di),
+              `if`(is.data.table(md),
+                   md %>% 
+                     .[,.(Dim_name,Dim_name_label,Dim_val,Dim_val_label)] %>%
+                     unique() %>%
+                     {dt <- (.)
+                     lapply(unique(dt$Dim_name),
+                            function(x) {
+                              selected_vals <- input[[paste0('selected_',x)]]
+                              if (!is.null(selected_vals) && x!='TIME_PERIOD')
+                                dt[Dim_name==x & Dim_val %in% selected_vals]
+                            })} %>%
+                     rbindlist() %>% 
+                     {if (nrow(.)==0) "" else 
+                       merge(.,unique(md[,.(Dim_name,only_one)])) %>% 
+                         {paste0("# ",.$Dim_name,'=',.$Dim_val,
+                                 ' -- ',
+                                 .$Dim_name_label,' = ',.$Dim_val_label,
+                                 ifelse(.$only_one,
+                                        ' # THE ONLY OPTION AVAILABLE', ""),
+                                 '\n') %>%
+                             paste(collapse="") %>% 
+                             paste0('## Meaning of the codes in `filters` below:\n',.)}},
+                   "") %>% 
+                paste0(preamble(input),
+                       '# Link to filtered raw data:\n# ',urlOfFilteredDataset(input),' \n',
+                       .,
+                       di %>%
+                         rbindlist() %>% 
+                         .$Dim_name %>%
+                         sapply(function(x)
+                           input[[paste0('selected_',x)]] %>% 
+                             paste0('"',.,'"',collapse=",") %>% 
+                             paste0(x,' = c(',.,')')) %>% 
+                         paste(collapse=',\n                          ') %>% 
+                         paste0('           filters = list(',.,')') %>% 
+                         paste0('importData("',input$selected_ds,'", # ',
+                                names(datasets)[datasets==input$selected_ds] %>%
+                                  sub('\\[.+\\] (.+)','\\1',.),'\n',
+                                .,') %>%\n'),
+                       middleware,
+                       unneededColsCode(md),
+                       dcastCode(md)) %>%
+                conclusion()
         )}
     })
-    Rcode <-
+    Rcode_full <-
       reactive({
         di <- dims()
         md <- metadata()
-        if (!is.null(di) && !is.null(md))
+        if (input$selected_ds!='<none>' && !is.null(di) && !is.null(md))
           di %>%
           rbindlist() %>% 
           .$Dim_name %>%
@@ -274,35 +359,44 @@ shinyApp(
           rbindlist() %>% 
           merge(md, by=c('Dim_name','Dim_val')) %>% 
           describe_dt_to_Rcode() %>% 
-          paste0('# Code generated on ',input$client_time,'\n\n',
-                 'library(magrittr)\nlibrary(data.table)\nlibrary(eurodata)\n',
-                 'dt__',input$selected_ds,' <-\n',
+          paste0(preamble(input),
+                 '# Link to full raw data (gzip-compressd TSV):\n# ',
+                 urlOfFullDataset(input$selected_ds),' \n',
                  'importData("',input$selected_ds,'") %>% # ',
                  names(datasets)[datasets==input$selected_ds] %>%
                    sub('\\[.+\\] (.+)','\\1',.),'\n',
-                 'as.data.table() %>%\n',
-                 '.[!is.na(value_)] %>%\n',
-                 '.[, flags_ := NULL] %>% # flags not needed\n',
+                 middleware,
                  '.[\n',.,'] %>%\n',
                  unneededColsCode(md),
-                 dcastCode(md),
-                 AltRcode()) %>% 
-          list(txt=.,
-               html=prismjs::prism_highlight_text(.,language='r') %>% 
-                 paste0('<pre class="shiny-text-output" style="background-color:white;">',.,'</pre>'))
+                 dcastCode(md)) %>% 
+          conclusion()
       })
-    output$value <-
-      reactive(Rcode()$html)
-    output$clip <- renderUI({
-      rc <- Rcode()$txt
-      if (!is.null(rc))
-        rclipButton(
-          inputId = "clipbtn",
-          label = "Copy to clipboard",
-          clipText = rc, 
-          icon = icon("clipboard")
-        )
-    })
+    output$Rcode_filtered <-
+      reactive(Rcode_filtered()$html)
+    output$Rcode_full <-
+      reactive(Rcode_full()$html)
+    output$clip_Rcode_filtered <-
+      renderUI({
+        rc <- Rcode_filtered()$txt
+        if (!is.null(rc))
+          rclipButton(
+            inputId = "clipbtn1",
+            label = "Copy to clipboard",
+            clipText = rc, 
+            icon = icon("clipboard")
+          )
+      })
+    output$clip_Rcode_full <-
+      renderUI({
+        rc <- Rcode_full()$txt
+        if (!is.null(rc))
+          rclipButton(
+            inputId = "clipbtn2",
+            label = "Copy to clipboard",
+            clipText = rc, 
+            icon = icon("clipboard")
+          )
+      })
   }
 ) %>% 
   if (interactive()) runApp(.) else .
