@@ -30,7 +30,7 @@ tryWebQuery <- function(f, ...)
   tryCatch(f(...),
            error = function(e)
              shinyalert::shinyalert("Connection problem!",
-                                    error_messsage,
+                                    error_message,
                                     type = "error"))
 
 memoImportLabels <-
