@@ -6,6 +6,7 @@ library(shinybusy)
 library(rclipboard)
 library(xml2)
 library(prismjs)
+library(shinyalert)
 
 # Helpers
 
@@ -21,8 +22,21 @@ codeWithLabelInNames <- function(code, label)
 withNotNull <- function(.df, ...)
   if (!is.null(.df)) with(.df, ...)
 
+error_message <- 
+  paste("The app cannot download the necessary metadata from Eurostat.",
+        "Refresh this page to try re-starting the app and re-trying the download.")
+
+tryWebQuery <- function(f, ...)
+  tryCatch(f(...),
+           error = function(e)
+             shinyalert::shinyalert("Connection problem!",
+                                    error_messsage,
+                                    type = "error"))
+
 memoImportLabels <-
-  memoise::memoise(importLabels)
+  memoise::memoise(function(...)
+    tryWebQuery(importLabels,...))
+
 
 describe_dt_to_Rcode <- function(describe_dt)
   describe_dt %>% {
@@ -91,11 +105,18 @@ unneededColsCode <- function(metadata_dt) {
 }
 
 datasets <-
-  importDataList() %>%
-  as.data.table() %>%
-  .[,.(Code,`Dataset name`)] %>%
-  unique() %>%
-  with(codeWithLabelInNames(Code,`Dataset name`))
+  tryCatch(importDataList() %>%
+             as.data.table() %>%
+             .[,.(Code,`Dataset name`)] %>%
+             unique() %>%
+             with(codeWithLabelInNames(Code,`Dataset name`)),
+           error = function(e)
+             list(error =
+                    paste('<div style="color:white;border-radius:20px;width:44%;',
+                          'background:red;padding:20px;text-align:center;',
+                          'position:absolute;top:45%;left:29%;font-size:20px;">&#9888;',
+                          sub('Refresh','<br>Refresh',error_message,fixed=TRUE),
+                          '</div>')))
 
 link <- function(txt, url)
   paste0('<a href="',url,'" target="_blank">',txt,'</a>')
@@ -179,16 +200,18 @@ prism_style <-
 
 # Application
 shinyApp(
-  ui = fluidPage(
-    tags$head(tags$style(HTML('* {font-weight: bold; font-family: monospace};',
-                              prism_style))),
-    rclipboardSetup(),
-    add_busy_spinner(spin="fading-circle", position='full-page',
-                     height='100px', width='100px'),
-    HTML('<input type="text" id="client_time_zone" name="client_time_zone" style="display: none;">',
-         '<input type="text" id="client_time_name" name="client_time_name" style="display: none;">'
-    ),
-    tags$script('
+  ui = if (is.list(datasets) && 'error' %in% names(datasets))
+    HTML(datasets$error) else
+      fluidPage(
+        tags$head(tags$style(HTML('* {font-weight: bold; font-family: monospace};',
+                                  prism_style))),
+        rclipboardSetup(),
+        add_busy_spinner(spin="fading-circle", position='full-page',
+                         height='100px', width='100px'),
+        HTML('<input type="text" id="client_time_zone" name="client_time_zone" style="display: none;">',
+             '<input type="text" id="client_time_name" name="client_time_name" style="display: none;">'
+        ),
+        tags$script('
     $(function() {
     var time_zone = new Date().getTimezoneOffset();
     $("input#client_time_zone").val(time_zone);});'),
@@ -243,7 +266,7 @@ shinyApp(
     metadata <- reactive(
       input$selected_ds %>% 
         {`if`(.!='<none>',
-              describe(.) %>% 
+              tryWebQuery(describe,.) %>% 
                 .[, only_one := length(Dim_val)==1, by=`Dim_name`] %>% 
                 # Corrections below due to changes between old and new Eurostat metadata:
                 .[, Dim_name := Dim_name %>% ifelse(.=='time','TIME_PERIOD',.)] %>% 
@@ -323,7 +346,7 @@ shinyApp(
                              paste0('## Meaning of the codes in `filters` below:\n',.)}},
                    "") %>% 
                 paste0(preamble(input),
-                       '# Link to filtered raw data:\n# ',urlOfFilteredDataset(input),' \n',
+                       '## Link to filtered raw data (TSV):\n# ',urlOfFilteredDataset(input),' \n',
                        .,
                        di %>%
                          rbindlist() %>% 
@@ -334,7 +357,9 @@ shinyApp(
                              paste0(x,' = c(',.,')')) %>% 
                          paste(collapse=',\n                          ') %>% 
                          paste0('           filters = list(',.,')') %>% 
-                         paste0('importData("',input$selected_ds,'", # ',
+                         paste0('## Warning: importData() below may return an empty data.frame (with 0 observations)\n',
+                                '## if the application of `filters` results in no available data!\n',
+                                'importData("',input$selected_ds,'", # ',
                                 names(datasets)[datasets==input$selected_ds] %>%
                                   sub('\\[.+\\] (.+)','\\1',.),'\n',
                                 .,') %>%\n'),
