@@ -7,6 +7,7 @@ library(rclipboard)
 library(xml2)
 library(prismjs)
 library(shinyalert)
+library(memoise)
 
 # Helpers
 
