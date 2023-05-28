@@ -19,7 +19,7 @@ for (n in needed_pkgs)
       install.packages(n)
 ```
 
-💡&#xFE0E; *BTW, you can also search Eurostat datasets at https://shiny-r.tk/find_estat or https://alekr.shinyapps.io/find_estat*
+💡&#xFE0E; *BTW, you can also **search** Eurostat datasets at https://shiny-r.tk/find_estat or https://alekr.shinyapps.io/find_estat*
 
 A screenshot of the `eurodata_codegen` app:
 
