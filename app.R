@@ -139,7 +139,8 @@ middleware <-
 conclusion <- function(rcode)
   rcode %>% 
   list(txt=.,
-       html=prismjs::prism_highlight_text(.,language='r') %>% 
+       html=tryCatch(prismjs::prism_highlight_text(.,language='r'),
+                     error=function(e) paste('<code>',rcode,'</code>')) %>% 
          gsub('(https):\\/\\/(\\S*)',
               '\\1://\\2' %>% link(.,.),
               .) %>% 
