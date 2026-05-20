@@ -7,7 +7,6 @@ library(rclipboard)
 library(xml2)
 library(prismjs)
 library(shinyalert)
-library(memoise)
 
 # Helpers
 
@@ -139,8 +138,7 @@ middleware <-
 conclusion <- function(rcode)
   rcode %>% 
   list(txt=.,
-       html=tryCatch(prismjs::prism_highlight_text(.,language='r'),
-                     error=function(e) paste('<code>',rcode,'</code>')) %>% 
+       html=prismjs::prism_highlight_text(.,language='r') %>% 
          gsub('(https):\\/\\/(\\S*)',
               '\\1://\\2' %>% link(.,.),
               .) %>% 
@@ -280,10 +278,14 @@ shinyApp(
       reactive(
         input$selected_ds %>% 
           {`if`(.!='<none>',
-                paste0('https://ec.europa.eu/eurostat/databrowser/view/',.,
-                       '/default/table?lang=en') %>% 
-                  {paste0('<small style="display:block; margin-top:-10px; margin-bottom:20px;"><small>',
-                          'Link to Eurostat\'s GUI: ',link(.,.),'</small></small>')}
+                paste0('<small style="display:block; margin-top:-10px; margin-bottom:20px;"><small>',
+                       '&#x25B6; Link to Eurostat\'s GUI: ',
+                       paste0('https://ec.europa.eu/eurostat/databrowser/view/',.,
+                              '/default/table') %>% link(.,.),
+                       '<br>&#x25B6; ',
+                       link(paste0('AI explanation of [',.,']'),
+                            paste0('https://chatgpt.com/?prompt=Explain+what+the+Eurostat+dataset+%22',.,'%22+is+about+and+what+questions+I+can+use+it+for%2E')),
+                       '</small></small>')
           )})
     output$dim_selection_ui <-
       renderUI({
